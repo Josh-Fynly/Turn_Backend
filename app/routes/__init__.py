@@ -11,7 +11,7 @@ from app.api.direct_application import router as direct_application_router
 from .project_routes import router as project_router
 from .cv_routes import router as cv_router
 from .job_routes import router as job_router
-
+from .email_routes import router as email_router
 # List of all routers to be included in the main app
 routers = [
     auth_router,
