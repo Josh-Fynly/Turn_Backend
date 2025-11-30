@@ -11,7 +11,7 @@ from app.core.database import Base
 from app.core.utils import utc_now
 
 if TYPE_CHECKING:
-   from app.database.platform_models import ProjectSimulation, CV, JobApplication, Portfolio, UserAchievement
+    from app.database.platform_models import ProjectSimulation, CV, JobApplication, Portfolio, UserAchievement
     from app.database.community_models import ForumPost, ForumComment, Mentorship  
     from app.database.job_models import SavedJob, JobAlert
     from app.database.cv_models import CVExport
