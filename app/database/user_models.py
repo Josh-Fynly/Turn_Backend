@@ -73,14 +73,14 @@ class User(Base):
     achievements: Mapped[List["UserAchievement"]] = relationship("UserAchievement", back_populates="user")
     level_progression: Mapped[Optional["UserLevel"]] = relationship("UserLevel", back_populates="user", uselist=False)
 
-    # NEW — Payments / Subscriptions
+# NEW — Payments / Subscriptions
     subscriptions: Mapped[List["Subscription"]] = relationship(
         "Subscription",
         back_populates="user",
         cascade="all, delete-orphan"
     )
 
-   # Composite indexes for common query patterns
+    # Composite indexes for common query patterns
     __table_args__ = (
         Index('idx_user_active_role', 'is_active', 'role'),
         Index('idx_user_verified_active', 'is_verified', 'is_active'),
