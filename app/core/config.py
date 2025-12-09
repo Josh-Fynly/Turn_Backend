@@ -42,10 +42,7 @@ mailersend_sender_email: str = Field(alias="MAILERSEND_SENDER_EMAIL")
 mailersend_sender_name: str = Field(alias="MAILERSEND_SENDER_NAME")
 from_email: str = Field(alias="FROM_EMAIL")
 
-email_verification_enabled: bool = Field(alias="EMAIL_VERIFICATION_ENABLED")
-    
-    # Email verification enabled with Resend
-    email_verification_enabled: bool = Field(alias="EMAIL_VERIFICATION_ENABLED")
+email_verification_enabled: bool = Field(alias="EMAIL_VERIFICATION_ENABLED)
     
     # File Storage
     cloudinary_cloud_name: Optional[str] = Field(default=None, alias="CLOUDINARY_CLOUD_NAME")
