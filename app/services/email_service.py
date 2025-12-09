@@ -1,197 +1,116 @@
-"""
-MailerSend Email Service with Jinja2 Templates
-Author: TURNVE Backend
-"""
-
+# app/services/email_service.py
+import os
 import logging
-import random
-import string
-from typing import Any, Dict, List, Optional
-from datetime import datetime, timedelta
+from typing import Optional
 from pathlib import Path
 
 import httpx
-from jinja2 import Environment, FileSystemLoader, select_autoescape
+from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 
 from app.core.config import settings
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("turnve.email_service")
+MAILERSEND_API_URL = "https://api.mailersend.com/v1/email"
 
+# Templates directory
+TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "templates" / "emails"
+jinja_env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR))) if TEMPLATES_DIR.exists() else None
 
-# -------------------------------------------------
-# TEMPLATE ENGINE
-# -------------------------------------------------
-class EmailTemplateService:
-    """Loads and renders Jinja2 email templates."""
-
-    def __init__(self):
-        self.templates_dir = Path(__file__).parent.parent / "templates" / "emails"
-        self.templates_dir.mkdir(parents=True, exist_ok=True)
-
-        self.jinja = Environment(
-            loader=FileSystemLoader(str(self.templates_dir)),
-            autoescape=select_autoescape(["html", "xml"])
-        )
-
-        logger.info(f"Email templates directory: {self.templates_dir}")
-
-    def render(self, template_name: str, context: Dict[str, Any]) -> str:
+def _render_template(template_name: str, context: dict) -> str:
+    """
+    Render a Jinja2 template if available; otherwise build a simple HTML message.
+    """
+    if jinja_env:
         try:
-            template = self.jinja.get_template(template_name)
-            return template.render(**context)
-        except Exception as e:
-            logger.error(f"Template error {template_name}: {e}")
-            return f"<h1>Template Error</h1><p>{e}</p>"
+            tpl = jinja_env.get_template(template_name)
+            return tpl.render(**context)
+        except TemplateNotFound:
+            logger.debug("Template %s not found in %s, falling back to simple HTML", template_name, TEMPLATES_DIR)
+    # Fallback HTML
+    title = context.get("title", "")
+    body = context.get("body", "")
+    return f"""
+    <html>
+      <body>
+        <h2>{title}</h2>
+        <div>{body}</div>
+      </body>
+    </html>
+    """
 
+async def _post_mailersend(payload: dict) -> dict:
+    api_key = getattr(settings, "mailersend_api_key", None) or os.getenv("MAILERSEND_API_KEY")
+    if not api_key:
+        raise RuntimeError("MailerSend API key not configured (MAILERSEND_API_KEY)")
 
-# -------------------------------------------------
-# MAILERSEND SERVICE
-# -------------------------------------------------
-class EmailService:
-    """MailerSend transactional email service."""
-
-    def __init__(self):
-        self.api_key = settings.mailersend_api_key
-        self.sender_email = settings.mailersend_sender_email
-        self.sender_name = settings.mailersend_sender_name
-        self.base_url = "https://api.mailersend.com/v1/email"
-
-        self.templates = EmailTemplateService()
-        self._otp_store = {}  # Use Redis in production
-
-        if not self.api_key:
-            logger.warning("MAILERSEND_API_KEY missing — emails will fail.")
-        else:
-            logger.info("MailerSend EmailService initialized.")
-
-    # -------------------------------------------------
-    # UTILITIES
-    # -------------------------------------------------
-    def generate_otp(self, length=6) -> str:
-        return ''.join(random.choices(string.digits, k=length))
-
-    # -------------------------------------------------
-    # CORE EMAIL SENDER
-    # -------------------------------------------------
-    async def send_email(
-        self,
-        to_email: str,
-        subject: str,
-        html: str,
-        to_name: Optional[str] = None
-    ) -> Dict[str, Any]:
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-
-        payload = {
-            "from": {
-                "email": self.sender_email,
-                "name": self.sender_name
-            },
-            "to": [
-                {"email": to_email, "name": to_name or to_email}
-            ],
-            "subject": subject,
-            "html": html
-        }
-
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(MAILERSEND_API_URL, json=payload, headers=headers)
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                res = await client.post(self.base_url, json=payload, headers=headers)
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.HTTPStatusError as exc:
+            logger.error("MailerSend error: %s — %s", exc, resp.text)
+            raise
 
-            if res.status_code in (200, 202):
-                return {"success": True, "message": "Email sent"}
-            else:
-                return {"success": False, "error": res.text}
+async def send_email(
+    to_email: str,
+    subject: str,
+    template_name: Optional[str] = None,
+    context: Optional[dict] = None,
+    html_override: Optional[str] = None,
+) -> dict:
+    """
+    Send an email via MailerSend.
+    - If template_name exists under app/templates/emails/<template_name>, it'll render with context.
+    - Otherwise html_override or fallback HTML will be used.
+    """
+    context = context or {}
+    if html_override:
+        html_body = html_override
+    elif template_name:
+        html_body = _render_template(template_name, context)
+    else:
+        html_body = _render_template("", context)
 
-        except Exception as e:
-            logger.error(f"MailerSend error: {e}")
-            return {"success": False, "error": str(e)}
+    payload = {
+        "from": {
+            "email": settings.mailersend_sender_email,
+            "name": settings.mailersend_sender_name,
+        },
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "html": html_body,
+    }
 
-    # -------------------------------------------------
-    # OTP EMAILS
-    # -------------------------------------------------
-    async def send_verification_otp(self, email: str, name: str):
-        otp = self.generate_otp()
-        expires = datetime.utcnow() + timedelta(minutes=10)
-        self._otp_store[f"{email}:verify"] = {"otp": otp, "expires": expires}
+    return await _post_mailersend(payload)
 
-        html = self.templates.render("otp.html", {
-            "otp_code": otp,
-            "name": name,
-            "purpose": "Email Verification",
-            "expiry_minutes": 10
-        })
+# Convenience helpers --------------------------------------------------------
 
-        result = await self.send_email(email, "Your Verification Code", html)
-        result["otp"] = otp
-        return result
+async def send_verification_email(to_email: str, token: str, user_display: str = "") -> dict:
+    """
+    Sends account verification link. Template fallback uses title/body from context.
+    Template expected: verify_email.html
+    Context will include `verification_url` and `user_display`.
+    """
+    verification_url = f"{settings.platform_url.rstrip('/')}/auth/verify?token={token}"
+    context = {
+        "title": "Verify your Turnve account",
+        "body": f"Hi {user_display},<br/><br/>Click <a href='{verification_url}'>here to verify your account</a>.",
+        "verification_url": verification_url,
+        "user_display": user_display,
+    }
+    return await send_email(to_email=to_email, subject="Verify your Turnve account", template_name="verify_email.html", context=context)
 
-    async def send_password_reset_otp(self, email: str, name: str):
-        otp = self.generate_otp()
-        expires = datetime.utcnow() + timedelta(minutes=10)
-        self._otp_store[f"{email}:reset"] = {"otp": otp, "expires": expires}
-
-        html = self.templates.render("otp.html", {
-            "otp_code": otp,
-            "name": name,
-            "purpose": "Password Reset",
-            "expiry_minutes": 10
-        })
-
-        result = await self.send_email(email, "Password Reset Code", html)
-        result["otp"] = otp
-        return result
-
-    async def verify_otp(self, email: str, otp: str, purpose: str):
-        key = f"{email}:{purpose}"
-        entry = self._otp_store.get(key)
-
-        if not entry:
-            return {"success": False, "error": "OTP expired or missing"}
-
-        if entry["otp"] != otp:
-            return {"success": False, "error": "Invalid OTP"}
-
-        if datetime.utcnow() > entry["expires"]:
-            return {"success": False, "error": "OTP expired"}
-
-        del self._otp_store[key]
-        return {"success": True, "message": "OTP verified"}
-
-    # -------------------------------------------------
-    # OTHER EMAIL TYPES
-    # -------------------------------------------------
-    async def send_welcome_email(self, email: str, name: str):
-        html = self.templates.render("welcome.html", {
-            "name": name,
-            "platform_url": settings.platform_url
-        })
-        return await self.send_email(email, "Welcome to TURNVE!", html)
-
-    async def send_cv_ready(self, email: str, name: str, url: str):
-        html = self.templates.render("cv_ready.html", {
-            "name": name,
-            "cv_download_url": url
-        })
-        return await self.send_email(email, "Your CV is Ready!", html)
-
-    async def send_job_alert(self, email: str, name: str, jobs: List[Dict]):
-        html = self.templates.render("job_alert.html", {
-            "name": name,
-            "jobs": jobs
-        })
-        return await self.send_email(email, f"{len(jobs)} New Job Matches", html)
-
-    async def send_interview_reminder(self, email: str, name: str, details: Dict[str, Any]):
-        html = self.templates.render("interview_reminder.html", {
-            "name": name,
-            **details
-        })
-        return await self.send_email(email, "Interview Reminder", html)
-
-
-email_service = EmailService()
+async def send_password_reset_email(to_email: str, token: str, user_display: str = "") -> dict:
+    reset_url = f"{settings.platform_url.rstrip('/')}/auth/reset-password?token={token}"
+    context = {
+        "title": "Reset your Turnve password",
+        "body": f"Hi {user_display},<br/><br/>Click <a href='{reset_url}'>here to reset your password</a>.",
+        "reset_url": reset_url,
+        "user_display": user_display,
+    }
+    return await send_email(to_email=to_email, subject="Turnve password reset", template_name="reset_password.html", context=context)
