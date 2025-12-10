@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     termii_sender_id: str = Field(alias="TERMII_SENDER_ID")
     termii_base_url: str = Field(alias="TERMII_BASE_URL")
 
+# Paystack Payment Gateway
+paystack_public_key: Optional[str] = Field(default=None, alias="PAYSTACK_PUBLIC_KEY")
+paystack_secret_key: Optional[str] = Field(default=None, alias="PAYSTACK_SECRET_KEY")
+paystack_base_url: str = Field(default="https://api.paystack.co")
+
     # Video / Educational APIs (Free)
     youtube_api_key: Optional[str] = Field(default=None, alias="YOUTUBE_API_KEY")
 
