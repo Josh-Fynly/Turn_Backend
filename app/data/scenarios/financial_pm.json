@@ -1,1 +1,28 @@
-
+{
+  "industry": "financial",
+  "role": "product_manager",
+  "initial_state": {
+    "budget": 5000,
+    "deadline_days": 7,
+    "risk": 0.2,
+    "stakeholder_trust": 0.5
+  },
+  "actions": {
+    "prioritize_features": {
+      "choices": {
+        "fast": {
+          "effects": {"deadline_days": -2, "risk": 0.25, "stakeholder_trust": -0.1},
+          "feedback": "You moved fast, but compliance concerns increased."
+        },
+        "safe": {
+          "effects": {"deadline_days": +1, "risk": -0.1, "stakeholder_trust": +0.15},
+          "feedback": "The legal team is happy, but timelines slipped."
+        },
+        "balanced": {
+          "effects": {"deadline_days": -1, "risk": 0.05, "stakeholder_trust": +0.05},
+          "feedback": "A reasonable compromise across teams."
+        }
+      }
+    }
+  }
+}
