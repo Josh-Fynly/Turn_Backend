@@ -23,8 +23,8 @@ routers = [
     project_router,
     cv_router,
     job_router,
-    email_router
-    demo_router
+    email_router,
+    demo_router,
 ]
 
 __all__ = [
@@ -35,5 +35,6 @@ __all__ = [
     "cv_router",
     "job_router",
     "direct_application_router",
+    "demo_router",
     "routers"
 ]
