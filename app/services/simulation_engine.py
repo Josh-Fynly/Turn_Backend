@@ -4,6 +4,7 @@ from typing import Dict, Any, Tuple
 
 
 BASE_PATH = Path(__file__).parent.parent / "data" / "scenarios"
+SIMULATION_PATH = Path(__file__).parent.parent / "data" / "scenarios"
 
 
 def load_scenario(industry: str, role: str) -> Dict[str, Any]:
@@ -19,6 +20,20 @@ def load_scenario(industry: str, role: str) -> Dict[str, Any]:
     return scenario
 
 
+def load_simulation(simulation_id: str) -> Dict[str, Any]:
+    """
+    Load a simulation by unique simulation ID.
+    Used for demo, API exposure, and future expansion.
+    """
+    file_path = SIMULATION_PATH / f"{simulation_id}.json"
+
+    if not file_path.exists():
+        raise ValueError("Simulation scenario not found")
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
 def apply_action(
     state: Dict[str, Any],
     action_id: str,
@@ -26,7 +41,7 @@ def apply_action(
 ) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
     new_state = state.copy()
 
-    # For demo: load same scenario every time
+    # Existing demo logic preserved
     scenario = load_scenario("financial", "product_manager")
     action = scenario["actions"][action_id]
     outcome = action["choices"][choice]
