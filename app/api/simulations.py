@@ -516,3 +516,40 @@ async def get_skill_assessment(
     }
     
     return skill_assessment
+
+demo_router = APIRouter(
+    prefix="/api/v1/demo/simulations",
+    tags=["Demo Simulations"]
+)
+
+
+@demo_router.get("/{simulation_key}")
+def load_demo_simulation(simulation_key: str):
+    try:
+        return load_simulation(simulation_key)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Demo simulation not found")
+
+
+@demo_router.post("/{simulation_key}/action")
+def run_demo_action(simulation_key: str, payload: dict):
+    try:
+        state = payload["state"]
+        action_id = payload["action_id"]
+        choice = payload["choice"]
+
+        new_state, feedback, log = apply_action(state, action_id, choice)
+        score = generate_score(new_state)
+        coach_summary = generate_coach_summary(new_state, score)
+
+        return {
+            "state": new_state,
+            "feedback": feedback,
+            "log": log,
+            "score": score,
+            "coach_summary": coach_summary,
+        }
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=f"Missing key: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
