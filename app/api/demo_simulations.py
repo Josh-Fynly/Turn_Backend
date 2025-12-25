@@ -1,5 +1,5 @@
-import uuid
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from typing import Dict, Any
 
 from app.services.simulation_engine import (
@@ -12,84 +12,85 @@ from app.services.simulation_engine import (
 
 router = APIRouter(prefix="/demo/simulations", tags=["Demo Simulations"])
 
-# In-memory session store (demo only)
-DEMO_SESSIONS: Dict[str, Dict[str, Any]] = {}
+
+# -------------------------
+# Request Schemas
+# -------------------------
+
+class ActionRequest(BaseModel):
+    state: Dict[str, Any]
+    action_id: str
+    choice: str
 
 
-@router.post("/start")
+class StateRequest(BaseModel):
+    state: Dict[str, Any]
+
+
+# -------------------------
+# Endpoints
+# -------------------------
+
+@router.get("/{simulation_id}")
 def start_simulation(simulation_id: str):
     """
-    Start a new demo simulation session.
+    Load simulation scenario and initialize state.
     """
     try:
         scenario = load_simulation(simulation_id)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Simulation not found")
+        state = initialize_state(scenario)
 
-    session_id = str(uuid.uuid4())
-
-    DEMO_SESSIONS[session_id] = {
-        "scenario": scenario,
-        "state": initialize_state(scenario),
-        "history": [],
-    }
-
-    return {
-        "session_id": session_id,
-        "meta": scenario.get("meta", {}),
-        "initial_state": DEMO_SESSIONS[session_id]["state"],
-        "actions": scenario.get("actions", {}),
-    }
+        return {
+            "simulation_id": simulation_id,
+            "meta": scenario.get("meta", {}),
+            "context": scenario.get("context", {}),
+            "actions": scenario.get("actions", {}),
+            "state": state,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.post("/act")
-def take_action(
-    session_id: str,
-    action_id: str,
-    choice: str,
-):
+@router.post("/{simulation_id}/act")
+def take_action(simulation_id: str, payload: ActionRequest):
     """
-    Apply a decision to the simulation.
+    Apply a user decision.
     """
-    session = DEMO_SESSIONS.get(session_id)
-
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-
     try:
         new_state, feedback, log = apply_action(
-            scenario=session["scenario"],
-            state=session["state"],
-            action_id=action_id,
-            choice=choice,
+            simulation_id,
+            payload.state,
+            payload.action_id,
+            payload.choice,
         )
+
+        return {
+            "state": new_state,
+            "feedback": feedback,
+            "log": log,
+        }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    session["state"] = new_state
-    session["history"].append(log)
 
-    return {
-        "state": new_state,
-        "feedback": feedback,
-        "history": session["history"],
-    }
-
-
-@router.get("/score/{session_id}")
-def get_score(session_id: str):
+@router.post("/score")
+def score_simulation(payload: StateRequest):
     """
-    Get score and AI coach feedback.
+    Generate performance score.
     """
-    session = DEMO_SESSIONS.get(session_id)
+    score = generate_score(payload.state)
+    return score
 
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
 
-    score = generate_score(session["state"])
-    summary = generate_coach_summary(session["state"], score)
+@router.post("/coach")
+def coach_feedback(payload: StateRequest):
+    """
+    Generate coach summary feedback.
+    """
+    score = generate_score(payload.state)
+    summary = generate_coach_summary(payload.state, score)
 
     return {
         "score": score,
-        "coach_feedback": summary,
+        "summary": summary,
     }
