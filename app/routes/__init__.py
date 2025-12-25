@@ -13,6 +13,8 @@ from .cv_routes import router as cv_router
 from .job_routes import router as job_router
 from .email_routes import router as email_router
 from app.api.simulations import demo_router
+from app.api.demo_simulations import router as demo_router
+routers.append(demo_router)
 # List of all routers to be included in the main app
 routers = [
     auth_router,
