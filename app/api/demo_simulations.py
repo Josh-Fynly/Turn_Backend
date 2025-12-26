@@ -10,12 +10,11 @@ from app.services.simulation_engine import (
     generate_coach_summary,
 )
 
-router = APIRouter(prefix="/demo/simulations", tags=["Demo Simulations"])
+router = APIRouter(
+    prefix="/demo/simulations",
+    tags=["Demo Simulations"],
+)
 
-
-# -------------------------
-# Request Schemas
-# -------------------------
 
 class ActionRequest(BaseModel):
     state: Dict[str, Any]
@@ -23,74 +22,46 @@ class ActionRequest(BaseModel):
     choice: str
 
 
-class StateRequest(BaseModel):
-    state: Dict[str, Any]
-
-
-# -------------------------
-# Endpoints
-# -------------------------
-
 @router.get("/{simulation_id}")
-def start_simulation(simulation_id: str):
-    """
-    Load simulation scenario and initialize state.
-    """
+def get_demo_simulation(simulation_id: str):
     try:
         scenario = load_simulation(simulation_id)
-        state = initialize_state(scenario)
+        initial_state = initialize_state(scenario)
 
         return {
             "simulation_id": simulation_id,
             "meta": scenario.get("meta", {}),
-            "context": scenario.get("context", {}),
+            "initial_state": initial_state,
             "actions": scenario.get("actions", {}),
-            "state": state,
         }
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.post("/{simulation_id}/act")
-def take_action(simulation_id: str, payload: ActionRequest):
-    """
-    Apply a user decision.
-    """
+@router.post("/{simulation_id}/action")
+def run_demo_action(simulation_id: str, payload: ActionRequest):
     try:
         new_state, feedback, log = apply_action(
-            simulation_id,
-            payload.state,
-            payload.action_id,
-            payload.choice,
+            simulation_id=simulation_id,
+            state=payload.state,
+            action_id=payload.action_id,
+            choice=payload.choice,
         )
 
+        score = generate_score(new_state)
+        coach_summary = generate_coach_summary(new_state, score)
+
         return {
-            "state": new_state,
+            "new_state": new_state,
             "feedback": feedback,
+            "score": score,
+            "coach_summary": coach_summary,
             "log": log,
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/score")
-def score_simulation(payload: StateRequest):
-    """
-    Generate performance score.
-    """
-    score = generate_score(payload.state)
-    return score
-
-
-@router.post("/coach")
-def coach_feedback(payload: StateRequest):
-    """
-    Generate coach summary feedback.
-    """
-    score = generate_score(payload.state)
-    summary = generate_coach_summary(payload.state, score)
-
-    return {
-        "score": score,
-        "summary": summary,
-    }
+@router.get("/health")
+def demo_health_check():
+    return {"status": "ok", "demo": "simulation"}
