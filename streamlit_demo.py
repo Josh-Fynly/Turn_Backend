@@ -6,57 +6,117 @@ from app.services.simulation_engine import (
     generate_coach_summary,
 )
 
-SIMULATION_ID = "technology_product_associate"
-
+# -----------------------------
+# Page config
+# -----------------------------
 st.set_page_config(
-    page_title="Turnve Demo",
-    layout="centered"
+    page_title="Turnve — Career Simulation Demo",
+    layout="centered",
 )
 
 st.title("Turnve Career Simulation")
-st.write("Work on real projects. Learn by doing.")
+st.caption("Experience real work — not courses.")
 
-# Initialize session
+# -----------------------------
+# Session State Initialization
+# -----------------------------
+if "simulation_id" not in st.session_state:
+    st.session_state.simulation_id = "technology_product_associate"
+
 if "scenario" not in st.session_state:
-    st.session_state.scenario = load_simulation(SIMULATION_ID)
-    st.session_state.state = st.session_state.scenario["initial_state"].copy()
-    st.session_state.completed = False
+    st.session_state.scenario = load_simulation(
+        st.session_state.simulation_id
+    )
 
-scenario = st.session_state.scenario
-state = st.session_state.state
+if "state" not in st.session_state:
+    st.session_state.state = (
+        st.session_state.scenario["initial_state"].copy()
+    )
 
-# Project brief
-st.subheader("Project Brief")
-st.write(scenario["context"]["summary"])
+if "history" not in st.session_state:
+    st.session_state.history = []
 
-# Task
-if not st.session_state.completed:
-    st.subheader("Your Task")
+# -----------------------------
+# Project Brief
+# -----------------------------
+with st.container():
+    st.subheader("📌 Project Brief")
 
-    for action_id, action in scenario["actions"].items():
-        st.write(action["prompt"])
+    meta = st.session_state.scenario.get("meta", {})
+    context = st.session_state.scenario.get("context", {})
 
-        for choice_id, choice in action["choices"].items():
-            if st.button(choice["label"]):
-                new_state, feedback, _ = apply_action(
-                    SIMULATION_ID,
-                    state,
-                    action_id,
-                    choice_id
-                )
+    st.markdown(f"**Role:** {meta.get('role')}")
+    st.markdown(f"**Industry:** {meta.get('industry')}")
+    st.markdown("---")
+    st.write(context.get("summary", ""))
 
-                st.session_state.state = new_state
-                st.session_state.feedback = feedback
-                st.session_state.completed = True
-                st.rerun()
+# -----------------------------
+# Current State Display
+# -----------------------------
+with st.container():
+    st.subheader("📊 Current Project State")
+    st.json(st.session_state.state)
 
-# Feedback
-if st.session_state.completed:
-    st.subheader("AI Coach Feedback")
-    st.success(st.session_state.feedback)
+# -----------------------------
+# Decision Interface
+# -----------------------------
+st.subheader("🧠 Make a Decision")
 
+actions = st.session_state.scenario.get("actions", {})
+
+action_id = st.selectbox(
+    "Select a situation",
+    options=list(actions.keys()),
+)
+
+choices = actions[action_id]["choices"]
+
+choice_id = st.radio(
+    "How do you respond?",
+    options=list(choices.keys()),
+    format_func=lambda c: choices[c].get("label", c),
+)
+
+if st.button("Submit Decision"):
+    new_state, feedback, log = apply_action(
+        simulation_id=st.session_state.simulation_id,
+        state=st.session_state.state,
+        action_id=action_id,
+        choice=choice_id,
+    )
+
+    st.session_state.state = new_state
+    st.session_state.history.append(
+        {
+            "action": action_id,
+            "choice": choice_id,
+            "feedback": feedback,
+        }
+    )
+
+    st.success("Decision applied.")
+    st.info(feedback)
+
+# -----------------------------
+# History
+# -----------------------------
+if st.session_state.history:
+    st.subheader("🗂 Decision History")
+    for h in st.session_state.history:
+        st.write(
+            f"**{h['action']} → {h['choice']}**\n\n{h['feedback']}"
+        )
+
+# -----------------------------
+# Score & Coach Feedback
+# -----------------------------
+if st.button("Finish Simulation"):
     score = generate_score(st.session_state.state)
-    summary = generate_coach_summary(st.session_state.state, score)
+    summary = generate_coach_summary(
+        st.session_state.state, score
+    )
 
-    st.write(summary)
+    st.subheader("🏁 Simulation Results")
     st.json(score)
+    st.markdown("### AI Coach Feedback")
+    st.write(summary)
